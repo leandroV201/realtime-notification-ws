@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+  runtime = "nodejs"
+  moduleFormat = "cjs"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String     @id @default(uuid()) @db.Uuid
+  email     String     @unique
+  name      String?
+  password  String     @map("senha")
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+
+  @@map("users")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String
+  title     String
+  message   String
+  data      Json     @default("{}")
+
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_notifications_user_created")
+  @@index([userId, readAt], map: "idx_notifications_user_read")
+  @@index([type], map: "idx_notifications_type")
+
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, type], map: "uq_user_type")
+  @@index([userId], map: "idx_notification_preferences_user")
+
+  @@map("notification_preferences")
+}
