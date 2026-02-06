@@ -11,9 +11,10 @@ import { TestController } from './test/test.controller';
 import { KafkaModule } from './kafka/kafka.module';
 import { AuthController } from './auth/auth.controller';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), RealtimeModule, RedisModule, EventsModule, NotificationsModule, PrismaModule, KafkaModule, AuthModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), RealtimeModule, RedisModule, EventsModule, NotificationsModule, PrismaModule, KafkaModule, AuthModule, UsersModule],
   controllers: [AppController, TestController, AuthController],
   providers: [AppService],
 })
