@@ -1,52 +1,181 @@
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
+}
+
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
   },
 })
-export class RealtimeGateway {
+export class RealtimeGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
+  constructor(
+    private jwtService: JwtService,
+    private configService: ConfigService,
+  ) {}
+
   @WebSocketServer()
-  server: Server
+  server: Server;
 
-  private readonly userSockets = new Map<string, Set<string>>()
+  private readonly userSockets = new Map<string, Set<string>>();
 
-  @SubscribeMessage('join')
-  handleJoin(@MessageBody() data: { userId: string }, @ConnectedSocket() client: Socket) {
-    const userId = data?.userId
-    if (!userId) return
-    if (!this.userSockets.has(userId)) {
-      this.userSockets.set(userId, new Set());
+  async handleConnection(client: AuthenticatedSocket) {
+    try {
+      const token =
+        client.handshake.auth?.token ||
+        client.handshake.headers?.authorization?.split(' ')[1] ||
+        client.handshake.query?.token;
+        console.log(client.handshake);
+
+      if (!token) {
+        console.log(`[WS] Cliente sem token: ${client.id}`);
+        client.emit('error', { message: 'Token não fornecido' });
+        client.disconnect();
+        return;
+      }
+
+      const payload = this.jwtService.verify(token, {
+        secret:
+          this.configService.get('JWT_ACCESS_SECRET') || 'access-secret',
+      });
+
+      const userId = payload.sub;
+      client.userId = userId;
+
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
+      }
+      this.userSockets.get(userId)!.add(client.id);
+
+      console.log(
+        `[WS] Usuário ${userId} conectado (socket: ${client.id}, total: ${this.userSockets.get(userId)!.size} conexões)`,
+      );
+
+      client.emit('authenticated', {
+        userId,
+        socketId: client.id,
+      });
+    } catch (error) {
+      console.error('[WS] Erro na autenticação:', error.message);
+      client.emit('error', { message: 'Token inválido ou expirado' });
+      client.disconnect();
     }
-
-    this.userSockets.get(userId)!.add(client.id);
-
-    client.emit('joined', { ok: true }, (data) => console.log(data));
   }
 
-  handleDisconnect(client: Socket) {
-    for (const [userId, socketIds] of this.userSockets.entries()) {
-      if (socketIds.has(client.id)) {
-        socketIds.delete(client.id)
-        if (socketIds.size === 0) this.userSockets.delete(userId);
-        break
+  handleDisconnect(client: AuthenticatedSocket) {
+    const userId = client.userId;
+
+    if (!userId) return;
+
+    const socketIds = this.userSockets.get(userId);
+    if (socketIds) {
+      socketIds.delete(client.id);
+
+      console.log(
+        `[WS] Usuário ${userId} desconectou (socket: ${client.id}, restantes: ${socketIds.size})`,
+      );
+
+      if (socketIds.size === 0) {
+        this.userSockets.delete(userId);
+        console.log(`[WS] Usuário ${userId} não tem mais conexões ativas`);
       }
     }
   }
 
+  @SubscribeMessage('join')
+  handleJoin(
+    @MessageBody() data: { userId?: string },
+    @ConnectedSocket() client: AuthenticatedSocket,
+  ) {
+    if (client.userId) {
+      client.emit('joined', {
+        ok: true,
+        userId: client.userId,
+        message: 'Já autenticado',
+      });
+      return;
+    }
+
+    const userId = data?.userId;
+    if (!userId) {
+      client.emit('joined', { ok: false, message: 'userId não fornecido' });
+      return;
+    }
+
+    client.userId = userId;
+
+    if (!this.userSockets.has(userId)) {
+      this.userSockets.set(userId, new Set());
+    }
+    this.userSockets.get(userId)!.add(client.id);
+
+    client.emit('joined', { ok: true, userId });
+  }
+
   sendToUser(userId: string, event: string, payload: any) {
-    const socketIds = this.userSockets.get(userId)
-    if (!socketIds || socketIds.size === 0) return
+    const socketIds = this.userSockets.get(userId);
+
+    if (!socketIds || socketIds.size === 0) {
+      console.log(
+        `[WS] Tentativa de enviar para usuário ${userId} que não está conectado`,
+      );
+      return false;
+    }
+
+    console.log(
+      `[WS] Enviando evento '${event}' para usuário ${userId} (${socketIds.size} conexões)`,
+    );
 
     for (const socketId of socketIds) {
-      this.server.to(socketId).emit(event, payload)
+      this.server.to(socketId).emit(event, payload);
     }
+
+    return true;
+  }
+
+  broadcast(event: string, payload: any) {
+    console.log(`[WS] Broadcast do evento '${event}' para todos os usuários`);
+    this.server.emit(event, payload);
+  }
+
+  isUserOnline(userId: string): boolean {
+    const socketIds = this.userSockets.get(userId);
+    return socketIds ? socketIds.size > 0 : false;
+  }
+
+  getUserConnectionCount(userId: string): number {
+    const socketIds = this.userSockets.get(userId);
+    return socketIds ? socketIds.size : 0;
+  }
+
+  getStats() {
+    return {
+      totalUsers: this.userSockets.size,
+      totalConnections: Array.from(this.userSockets.values()).reduce(
+        (sum, sockets) => sum + sockets.size,
+        0,
+      ),
+      users: Array.from(this.userSockets.entries()).map(
+        ([userId, socketIds]) => ({
+          userId,
+          connections: socketIds.size,
+        }),
+      ),
+    };
   }
 }

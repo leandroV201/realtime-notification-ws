@@ -14,7 +14,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), RealtimeModule, RedisModule, EventsModule, NotificationsModule, PrismaModule, KafkaModule, AuthModule, UsersModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: './env' }), RealtimeModule, RedisModule, EventsModule, NotificationsModule, PrismaModule, KafkaModule, AuthModule, UsersModule],
   controllers: [AppController, TestController, AuthController],
   providers: [AppService],
 })
