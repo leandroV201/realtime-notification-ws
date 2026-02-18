@@ -1,21 +1,36 @@
 import 'dotenv/config';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, HttpAdapterHost } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { METHODS } from 'node:http';
-import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
+import { AllExceptionsFilter } from './filters/all-exceptions.filter'; 
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.use(helmet());
+  app.use(compression());
+  app.use(cookieParser());
+
+  const allowedOrigins = (process.env.FRONTEND_URL ?? 'http://app.localhost')
+    .split(',')
+    .map(o => o.trim());
+
+  console.log(allowedOrigins);
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    credentials: true, 
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); 
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS bloqueado para ${origin}`));
+    },
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400,
   });
-
-  app.use(cookieParser());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -25,6 +40,11 @@ async function bootstrap() {
     }),
   );
 
+  
+  const { httpAdapter } = app.get(HttpAdapterHost);
+  app.useGlobalFilters(new AllExceptionsFilter());
+
   await app.listen(process.env.PORT ?? 3000);
 }
+
 bootstrap();

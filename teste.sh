@@ -4,7 +4,7 @@
 # Envia diferentes tipos de notificações para o usuário demo
 
 API_URL="http://localhost:3001"
-USER_ID="827a04a7-44f2-4a80-8ea2-fea7bea7c115"
+USER_ID="58d21dfb-246c-472c-a3b4-c494e049329b"
 
 echo "🚀 Testando Sistema de Notificações em Tempo Real"
 echo "=================================================="

@@ -1,8 +1,6 @@
 import { prisma } from './lib/prisma'
 
 async function main() {
-  // Example: Fetch all records from a table
-  // Replace 'user' with your actual model name
   const allUsers = await prisma.user.findMany()
 }
 

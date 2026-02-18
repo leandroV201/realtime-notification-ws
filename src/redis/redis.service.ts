@@ -61,4 +61,20 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const key = `refresh_token:${token}`
     await this.client.del(key)
   }
+
+  async cacheUnreadCount(userId: string, count: number, ttlSeconds: number = 300) {
+    const key = `unread_count:${userId}`;
+    await this.client.set(key, count.toString(), { EX: ttlSeconds });
+  }
+
+  async getUnreadCountCache(userId: string): Promise<number | null> {
+    const key = `unread_count:${userId}`;
+    const value = await this.client.get(key);
+    return value ? parseInt(value, 10) : null;
+  }
+
+  async invalidateUnreadCountCache(userId: string) {
+    const key = `unread_count:${userId}`;
+    await this.client.del(key);
+  }
 }

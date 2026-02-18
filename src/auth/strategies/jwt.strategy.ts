@@ -1,14 +1,17 @@
+import 'dotenv/config';
 import { Injectable } from '@nestjs/common'
 import { PassportStrategy } from '@nestjs/passport'
 import { ExtractJwt, Strategy } from 'passport-jwt'
+import { ConfigService } from '@nestjs/config'
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(private configService: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+      // ✅ CORRIGIDO: Usar JWT_ACCESS_SECRET (mesmo usado ao gerar o token)
+      secretOrKey: configService.get('JWT_ACCESS_SECRET') || 'your-secret-key-change-in-production',
     })
   }
 

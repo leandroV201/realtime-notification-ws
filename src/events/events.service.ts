@@ -6,7 +6,7 @@ export class EventsService implements OnModuleInit {
   private producer: any
 
   async onModuleInit() {
-    const broker = process.env.KAFKA_BROKER || 'localhost:9092'
+    const broker = process.env.KAFKA_BROKER || 'redis:9092'
 
     const kafka = new Kafka({
       clientId: 'api',

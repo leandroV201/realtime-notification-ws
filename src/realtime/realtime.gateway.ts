@@ -20,6 +20,8 @@ interface AuthenticatedSocket extends Socket {
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     credentials: true,
   },
+  pingInterval: 25000,
+  pingTimeout: 60000,
 })
 export class RealtimeGateway
   implements OnGatewayConnection, OnGatewayDisconnect
@@ -38,9 +40,7 @@ export class RealtimeGateway
     try {
       const token =
         client.handshake.auth?.token ||
-        client.handshake.headers?.authorization?.split(' ')[1] ||
         client.handshake.query?.token;
-        console.log(client.handshake);
 
       if (!token) {
         console.log(`[WS] Cliente sem token: ${client.id}`);
@@ -62,16 +62,11 @@ export class RealtimeGateway
       }
       this.userSockets.get(userId)!.add(client.id);
 
-      console.log(
-        `[WS] Usuário ${userId} conectado (socket: ${client.id}, total: ${this.userSockets.get(userId)!.size} conexões)`,
-      );
-
       client.emit('authenticated', {
         userId,
         socketId: client.id,
       });
     } catch (error) {
-      console.error('[WS] Erro na autenticação:', error.message);
       client.emit('error', { message: 'Token inválido ou expirado' });
       client.disconnect();
     }
@@ -86,13 +81,8 @@ export class RealtimeGateway
     if (socketIds) {
       socketIds.delete(client.id);
 
-      console.log(
-        `[WS] Usuário ${userId} desconectou (socket: ${client.id}, restantes: ${socketIds.size})`,
-      );
-
       if (socketIds.size === 0) {
         this.userSockets.delete(userId);
-        console.log(`[WS] Usuário ${userId} não tem mais conexões ativas`);
       }
     }
   }
@@ -102,44 +92,19 @@ export class RealtimeGateway
     @MessageBody() data: { userId?: string },
     @ConnectedSocket() client: AuthenticatedSocket,
   ) {
-    if (client.userId) {
-      client.emit('joined', {
-        ok: true,
-        userId: client.userId,
-        message: 'Já autenticado',
-      });
-      return;
-    }
-
-    const userId = data?.userId;
-    if (!userId) {
-      client.emit('joined', { ok: false, message: 'userId não fornecido' });
-      return;
-    }
-
-    client.userId = userId;
-
-    if (!this.userSockets.has(userId)) {
-      this.userSockets.set(userId, new Set());
-    }
-    this.userSockets.get(userId)!.add(client.id);
-
-    client.emit('joined', { ok: true, userId });
+    client.emit('joined', {
+      ok: true,
+      userId: client.userId,
+      message: 'Autenticado via token JWT',
+    });
   }
 
   sendToUser(userId: string, event: string, payload: any) {
     const socketIds = this.userSockets.get(userId);
 
     if (!socketIds || socketIds.size === 0) {
-      console.log(
-        `[WS] Tentativa de enviar para usuário ${userId} que não está conectado`,
-      );
       return false;
     }
-
-    console.log(
-      `[WS] Enviando evento '${event}' para usuário ${userId} (${socketIds.size} conexões)`,
-    );
 
     for (const socketId of socketIds) {
       this.server.to(socketId).emit(event, payload);
@@ -149,7 +114,6 @@ export class RealtimeGateway
   }
 
   broadcast(event: string, payload: any) {
-    console.log(`[WS] Broadcast do evento '${event}' para todos os usuários`);
     this.server.emit(event, payload);
   }
 
