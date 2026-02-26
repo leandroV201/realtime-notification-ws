@@ -13,6 +13,7 @@ import { KafkaModule } from './kafka/kafka.module';
 import { AuthController } from './auth/auth.controller';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { BucketModule } from './aws/bucket/bucket.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { UsersModule } from './users/users.module';
     KafkaModule,
     AuthModule,
     UsersModule,
+    BucketModule
   ],
   controllers: [AppController, TestController, AuthController],
   providers: [AppService],
