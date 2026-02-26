@@ -21,7 +21,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    const broker = process.env.KAFKA_BROKER || 'localhost:9092'
+    const broker = process.env.KAFKA_BROKER || 'redpanda:29092'
 
     const kafka = new Kafka({
       clientId: 'notification-consumer',

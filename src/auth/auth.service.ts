@@ -3,15 +3,21 @@ import { JwtService } from '@nestjs/jwt'
 import { PrismaService } from '../prisma/prisma.service'
 import * as bcrypt from 'bcrypt'
 import { LoginDto, RegisterDto } from './dto/auth.dto'
+import { ConfigService } from '@nestjs/config'
+import { RedisService } from 'src/redis/redis.service'
+import { TokenMetadata } from './dto/token.dto'
+import { v4 } from 'uuid'
 
 @Injectable()
 export class AuthService {
     constructor(
         private prisma: PrismaService,
         private jwtService: JwtService,
+        private configService: ConfigService,
+        private redisService: RedisService,
     ) { }
 
-    async register(registerDto: RegisterDto) {
+    async register(registerDto: RegisterDto, metadata: TokenMetadata) {
         const existingUser = await this.prisma.user.findUnique({
             where: { email: registerDto.email },
         })
@@ -31,10 +37,8 @@ export class AuthService {
         })
 
 
-        const token = this.jwtService.sign({
-            sub: user.id,
-            email: user.email,
-        })
+        const tokens = await this.generateTokens(user.id, user.email, metadata);
+
 
         return {
             user: {
@@ -43,11 +47,12 @@ export class AuthService {
                 name: user.name,
                 createdAt: user.createdAt.toISOString(),
             },
-            token,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
         }
     }
 
-    async login(loginDto: LoginDto) {
+    async login(loginDto: LoginDto, metadata: TokenMetadata) {
         const user = await this.prisma.user.findUnique({
             where: { email: loginDto.email },
         })
@@ -60,10 +65,7 @@ export class AuthService {
             throw new NotFoundException('Usuário não encontrado');
         }
 
-        const token = this.jwtService.sign({
-            sub: user.id,
-            email: user.email,
-        })
+        const tokens = await this.generateTokens(user.id, user.email, metadata);
 
         return {
             user: {
@@ -72,7 +74,8 @@ export class AuthService {
                 name: user.name,
                 createdAt: user.createdAt.toISOString(),
             },
-            token,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
         }
     }
 
@@ -92,4 +95,92 @@ export class AuthService {
             createdAt: user.createdAt.toISOString(),
         }
     }
+
+    async generateTokens(userId: string, email: string, metadata: TokenMetadata) {
+        const payload = { sub: userId, email: email };
+
+        const accessToken = this.jwtService.sign(payload, {
+            secret: this.configService.get('JWT_ACCESS_SECRET'),
+            expiresIn: '15m',
+        });
+
+
+        const refreshTokenValue = v4();
+        const refreshTokenExpiry = 7 * 24 * 60 * 60;
+
+        await this.redisService.setRefreshToken(refreshTokenValue, userId, refreshTokenExpiry);
+
+
+        await this.prisma.refreshToken.create({
+            data: {
+                token: refreshTokenValue,
+                userId,
+                ipAddress: metadata.ipAddress,
+                userAgent: metadata.userAgent,
+                deviceInfo: metadata.deviceInfo,
+                expiresAt: new Date(Date.now() + refreshTokenExpiry * 1000)
+            }
+        });
+
+        return {
+            accessToken,
+            refreshToken: refreshTokenValue,
+        };
+    }
+
+    async refreshAccessToken(refreshToken: string, metadata: TokenMetadata) {
+        const userId = await this.redisService.getRefreshToken(refreshToken);
+
+
+        if (!userId) {
+            throw new UnauthorizedException('Refresh token inválido ou expirado');
+        }
+
+        const tokenRecord = await this.prisma.refreshToken.findUnique({
+            where: { token: refreshToken },
+        });
+
+
+        if (!tokenRecord || tokenRecord.revokedAt) {
+            await this.redisService.deleteRefreshToken(refreshToken);
+            throw new UnauthorizedException('Refresh token revogado');
+        }
+
+        const accessToken = this.jwtService.sign(
+            { sub: userId },
+            {
+                secret: this.configService.get('JWT_ACCESS_SECRET'),
+                expiresIn: '15m',
+            },
+        );
+
+        return { accessToken };
+    }
+
+    async logout(refreshToken: string) {
+        await this.redisService.deleteRefreshToken(refreshToken);
+
+        await this.prisma.refreshToken.updateMany({
+            where: { token: refreshToken },
+            data: { revokedAt: new Date() },
+        });
+    }
+
+    async getActiveSessions(userId: string) {
+    return this.prisma.refreshToken.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        ipAddress: true,
+        userAgent: true,
+        deviceInfo: true,
+        createdAt: true,
+      },
+    });
+  }
 }

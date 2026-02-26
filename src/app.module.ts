@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RedisModule } from './redis/redis.module';
 import { EventsModule } from './events/events.module';
@@ -12,9 +13,27 @@ import { KafkaModule } from './kafka/kafka.module';
 import { AuthController } from './auth/auth.controller';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { BucketModule } from './aws/bucket/bucket.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), RealtimeModule, RedisModule, EventsModule, NotificationsModule, PrismaModule, KafkaModule, AuthModule, UsersModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
+    RealtimeModule,
+    RedisModule,
+    EventsModule,
+    NotificationsModule,
+    PrismaModule,
+    KafkaModule,
+    AuthModule,
+    UsersModule,
+    BucketModule
+  ],
   controllers: [AppController, TestController, AuthController],
   providers: [AppService],
 })

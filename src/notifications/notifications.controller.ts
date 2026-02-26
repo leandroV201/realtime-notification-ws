@@ -1,16 +1,20 @@
-import { Controller, Get, Query, Patch, Param, Delete } from "@nestjs/common"
+import { Controller, Get, Query, Patch, Param, Delete, UseGuards, Req } from "@nestjs/common"
 import { NotificationsService } from "./notifications.service"
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard"
+import type { Request } from "express"
 
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   async list(
-    @Query('userId') userId: string,
+    @Req() req: Request,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
   ) {
+    const userId = req['user'].sub;
     return this.notificationsService.list(
       userId,
       Number(page),
@@ -19,28 +23,36 @@ export class NotificationsController {
   }
 
   @Get('unread-count')
-  async unreadCount(@Query('userId') userId: string) {
+  @UseGuards(JwtAuthGuard)
+  async unreadCount(@Req() req: Request) {
+    const userId = req['user'].sub;
     return this.notificationsService.unreadCount(userId)
   }
 
   @Patch(':id/read')
+  @UseGuards(JwtAuthGuard)
   async markAsRead(
-    @Query('userId') userId: string,
+    @Req() req: Request,
     @Param('id') id: string,
   ) {
+    const userId = req['user'].sub;
     return this.notificationsService.markAsRead(userId, id)
   }
 
   @Patch('read-all')
-  async markAllAsRead(@Query('userId') userId: string) {
+  @UseGuards(JwtAuthGuard)
+  async markAllAsRead(@Req() req: Request) {
+    const userId = req['user'].sub;
     return this.notificationsService.markAllAsRead(userId)
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
   async remove(
-    @Query('userId') userId: string,
+    @Req() req: Request,
     @Param('id') id: string,
   ) {
+    const userId = req['user'].sub;
     return this.notificationsService.remove(userId, id)
   }
 }

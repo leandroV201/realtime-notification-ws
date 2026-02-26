@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { UUID } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { RedisService } from 'src/redis/redis.service';
 
 interface notification {
     userid: UUID;
@@ -12,32 +13,51 @@ interface notification {
 
 @Injectable()
 export class NotificationsService {
-    constructor(private prisma: PrismaService) { }
+    constructor(private prisma: PrismaService, private redis: RedisService) { }
 
     async list(userId: string, page = 1, limit = 20) {
         const skip = (page - 1) * limit
+        const maxLimit = Math.min(limit, 50);
 
         const [items, total] = await Promise.all([
             this.prisma.notification.findMany({
                 where: { userId },
+                select: {
+                    id: true,
+                    type: true,
+                    title: true,
+                    message: true,
+                    data: true,
+                    readAt: true,
+                    createdAt: true,
+                },
                 orderBy: { createdAt: 'desc' },
                 skip,
-                take: limit,
+                take: maxLimit,
             }),
             this.prisma.notification.count({
                 where: { userId },
             }),
         ])
 
-        return { items, total, page, limit }
+        return { items, total, page, limit: maxLimit }
     }
 
     async unreadCount(userId: string) {
-        const count = await this.prisma.notification.count({
-            where: { userId, readAt: null },
-        })
+        
+        let count = await this.redis.getUnreadCountCache(userId);
 
-        return { count }
+        
+        if (count === null) {
+            count = await this.prisma.notification.count({
+                where: { userId, readAt: null },
+            });
+
+            
+            await this.redis.cacheUnreadCount(userId, count, 300);
+        }
+
+        return { count };
     }
 
     async createNotification(notification: notification) {
@@ -52,10 +72,15 @@ export class NotificationsService {
     }
 
     async markAsRead(userId: string, id: string) {
-        return this.prisma.notification.update({
+        const result = await this.prisma.notification.update({
             where: { id, userId },
             data: { readAt: new Date() },
-        })
+        });
+
+        
+        await this.redis.invalidateUnreadCountCache(userId);
+
+        return result;
     }
 
     async markAllAsRead(userId: string) {
@@ -64,6 +89,9 @@ export class NotificationsService {
             data: { readAt: new Date() },
         })
 
+        
+        await this.redis.invalidateUnreadCountCache(userId);
+
         return { ok: true }
     }
 
@@ -71,6 +99,9 @@ export class NotificationsService {
         await this.prisma.notification.delete({
             where: { id, userId },
         })
+
+        
+        await this.redis.invalidateUnreadCountCache(userId);
 
         return { ok: true }
     }
