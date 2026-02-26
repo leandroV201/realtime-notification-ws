@@ -14,7 +14,7 @@ export class NotificationsController {
     @Query('page') page = '1',
     @Query('limit') limit = '20',
   ) {
-    const userId = req['us\er'].sub;
+    const userId = req['user'].sub;
     return this.notificationsService.list(
       userId,
       Number(page),
